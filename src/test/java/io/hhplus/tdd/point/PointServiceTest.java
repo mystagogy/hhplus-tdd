@@ -7,6 +7,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -123,6 +126,34 @@ class PointServiceTest {
         assertEquals(2000L, rtn.point());
         assertEquals(2000L, list.get(num).amount());
         assertEquals(TransactionType.CHARGE, list.get(num).type());
+
+    }
+
+    @Test
+    void 동시_포인트_충전() throws InterruptedException {
+        //given
+        long id = 100L;
+        UserPoint userPoint = pointService.getUserPoint(id);
+
+        long amount = 2000L;
+        int threadCnt = 5; //동시에 실행한 스레드 수
+        ExecutorService executor = Executors.newFixedThreadPool(threadCnt); //여러 스레드 동시 실행
+        CountDownLatch latch = new CountDownLatch(threadCnt); //동기화 도구
+
+        for (int i = 0; i < threadCnt; i++) { //5개의 스레드가 동시에 충전
+            executor.submit(() -> {
+                pointService.chargePoint(id, amount);
+                latch.countDown(); //작업 완료
+            });
+        }
+
+        latch.await(); //스레드 종료 대기
+        executor.shutdown(); //스레드 풀 종료
+
+        UserPoint rtnPoint = pointService.getUserPoint(id);
+
+        // 예상: 2000*5 = 10000
+        assertEquals(10000L, rtnPoint.point());
 
     }
 

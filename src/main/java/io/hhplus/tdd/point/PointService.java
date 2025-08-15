@@ -6,6 +6,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 @RequiredArgsConstructor
@@ -13,6 +16,7 @@ public class PointService {
     private final UserPointTable userPointTable;
     private final PointHistoryTable pointHistoryTable;
 
+    private final Map<Long, ReentrantLock> locks = new ConcurrentHashMap<>(); //사용자별 Lock 관리 Map
 
     /**
      * TODO - 특정 유저의 포인트를 조회하는 기능을 작성해주세요.
@@ -34,16 +38,25 @@ public class PointService {
      */
     public UserPoint chargePoint(Long id, Long amount) {
 
-        if(amount <= 0) throw new IllegalArgumentException("충전금액은 0원을 초과해야 합니다.");
-        //사용자 조회
-        UserPoint userPoint = userPointTable.selectById(id);
+        locks.putIfAbsent(id, new ReentrantLock()); //Lock 초기화
+        ReentrantLock lock = locks.get(id);
 
-        //포인트 추가 및 이력 업데이트
-        long point = userPoint.point() + amount;
-        UserPoint rtnUserPoint = userPointTable.insertOrUpdate(id, point);
-        pointHistoryTable.insert(id, amount, TransactionType.CHARGE, 123456789L);
+        lock.lock(); //다른 스레드 접근 불가
 
-        return rtnUserPoint;
+        try {
+            if(amount <= 0) throw new IllegalArgumentException("충전금액은 0원을 초과해야 합니다.");
+            //사용자 조회
+            UserPoint userPoint = userPointTable.selectById(id);
+
+            //포인트 추가 및 이력 업데이트
+            long point = userPoint.point() + amount;
+            UserPoint rtnUserPoint = userPointTable.insertOrUpdate(id, point);
+            pointHistoryTable.insert(id, amount, TransactionType.CHARGE, 123456789L);
+
+            return rtnUserPoint;
+        } finally {
+            lock.unlock(); //Lock 해제
+        }
     }
 
     /**
